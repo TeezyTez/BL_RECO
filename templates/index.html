@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>提单识别 EDI 工作台</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>提单识别 EDI 工作台</h1>
+      <p>PDF / 图片提单转结构化数据与 EDI 草稿</p>
+    </div>
+    <span class="standard">{{ edi_standard }}</span>
+  </header>
+
+  <main class="layout">
+    <section class="panel input-panel">
+      <div class="panel-head">
+        <h2>输入</h2>
+        <button id="sampleBtn" type="button">载入样例</button>
+      </div>
+      <form id="recognizeForm">
+        <label class="dropzone" for="document">
+          <input id="document" name="document" type="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp">
+          <span id="fileName">选择 PDF 或图片</span>
+        </label>
+        <label class="field-label" for="text">提单文本 / OCR 文本</label>
+        <textarea id="text" name="text" spellcheck="false" placeholder="可粘贴 OCR 文本，或上传文本型 PDF 后自动提取。"></textarea>
+        <label class="vision-consent">
+          <input id="useVision" name="use_vision" type="checkbox" value="1">
+          <span>使用视觉模型识别，文件页面图像会发送到 OpenAI API</span>
+        </label>
+        <div class="actions">
+          <button class="primary" type="submit">开始识别</button>
+          <button id="clearBtn" type="button">清空</button>
+        </div>
+      </form>
+      <div id="warnings" class="warnings" hidden></div>
+    </section>
+
+    <section class="panel result-panel">
+      <div class="panel-head">
+        <h2>结构化字段</h2>
+        <span id="quality" class="quality">等待识别</span>
+      </div>
+      <div id="fieldGrid" class="field-grid"></div>
+    </section>
+
+    <section class="panel edi-panel">
+      <div class="panel-head">
+        <h2>EDI 输出</h2>
+        <div class="tabbar" role="tablist">
+          <button class="tab active" data-tab="edifact" type="button">EDIFACT</button>
+          <button class="tab" data-tab="json" type="button">JSON</button>
+          <button class="tab" data-tab="flat" type="button">Flat EDI</button>
+        </div>
+      </div>
+      <pre id="ediOutput">上传或粘贴提单内容后生成 EDI。</pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
