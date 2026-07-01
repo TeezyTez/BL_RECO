@@ -9,19 +9,28 @@ const ediOutput = document.querySelector("#ediOutput");
 const sampleBtn = document.querySelector("#sampleBtn");
 const clearBtn = document.querySelector("#clearBtn");
 const tabs = document.querySelectorAll(".tab");
+const configStatus = document.querySelector("#configStatus");
+const jobList = document.querySelector("#jobList");
+const jobSearch = document.querySelector("#jobSearch");
+const refreshJobsBtn = document.querySelector("#refreshJobsBtn");
+const saveReviewBtn = document.querySelector("#saveReviewBtn");
+const copyOutputBtn = document.querySelector("#copyOutputBtn");
+const downloadOutputBtn = document.querySelector("#downloadOutputBtn");
 
 let lastResult = null;
 let activeTab = "edifact";
+let activeJobId = "";
 
 const labels = {
-  booking_no: "订舱号",
   bill_of_lading_no: "提单号",
+  booking_no: "订舱号",
   shipper: "发货人",
   consignee: "收货人",
   notify_party: "通知方",
   carrier: "承运人",
   vessel: "船名",
   voyage: "航次",
+  place_of_receipt: "收货地",
   port_of_loading: "装货港",
   port_of_discharge: "卸货港",
   place_of_delivery: "交货地",
@@ -31,8 +40,13 @@ const labels = {
   gross_weight: "毛重",
   measurement: "体积",
   freight_terms: "运费条款",
-  goods_description: "货物描述"
+  goods_description: "货物描述",
+  marks_and_nos: "唛头/标记",
+  containers: "箱明细"
 };
+
+const partyFields = new Set(["shipper", "consignee", "notify_party"]);
+const multiLineFields = new Set(["goods_description", "marks_and_nos"]);
 
 const sampleText = `BILL OF LADING NO: COSU6254813900
 BOOKING NO: SHABK240001
@@ -59,7 +73,7 @@ DESCRIPTION OF GOODS
 HOUSEHOLD CERAMIC TABLEWARE`;
 
 fileInput.addEventListener("change", () => {
-  fileName.textContent = fileInput.files[0]?.name || "选择 PDF 或图片";
+  syncFileName();
 });
 
 sampleBtn.addEventListener("click", () => {
@@ -74,6 +88,8 @@ clearBtn.addEventListener("click", () => {
   quality.textContent = "等待识别";
   ediOutput.textContent = "上传或粘贴提单内容后生成 EDI。";
   lastResult = null;
+  activeJobId = "";
+  setResultActions(false);
 });
 
 tabs.forEach((tab) => {
@@ -87,68 +103,281 @@ tabs.forEach((tab) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  syncFileName();
+  if (!fileInput.files.length && !textInput.value.trim()) {
+    const message = "请重新选择 PDF/图片，或粘贴提单文本后再识别。";
+    ediOutput.textContent = message;
+    renderWarnings([message]);
+    return;
+  }
   ediOutput.textContent = "识别中...";
   warnings.hidden = true;
-
   const body = new FormData(form);
+  setBusy(true);
   try {
-    const response = await fetch("/api/recognize", { method: "POST", body });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "识别失败");
-    lastResult = payload;
-    renderFields(payload.fields);
-    renderQuality(payload.quality);
-    renderWarnings(payload.warnings);
-    renderOutput();
+    const payload = await requestJson("/api/recognize", { method: "POST", body });
+    applyResult(payload.job || payload);
+    textInput.value = payload.text || textInput.value;
+    await loadJobs();
   } catch (error) {
     ediOutput.textContent = error.message;
+  } finally {
+    setBusy(false);
   }
 });
+
+refreshJobsBtn.addEventListener("click", () => loadJobs());
+jobSearch.addEventListener("input", debounce(() => loadJobs(jobSearch.value), 250));
+
+saveReviewBtn.addEventListener("click", async () => {
+  if (!activeJobId || !lastResult) return;
+  try {
+    const payload = await requestJson(`/api/jobs/${activeJobId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: readEditorFields(), status: "reviewed" })
+    });
+    applyResult(payload);
+    await loadJobs(jobSearch.value);
+  } catch (error) {
+    renderWarnings([error.message]);
+  }
+});
+
+copyOutputBtn.addEventListener("click", async () => {
+  if (!lastResult) return;
+  await navigator.clipboard.writeText(currentOutputText());
+  copyOutputBtn.textContent = "已复制";
+  setTimeout(() => {
+    copyOutputBtn.textContent = "复制";
+  }, 1200);
+});
+
+downloadOutputBtn.addEventListener("click", () => {
+  if (!activeJobId) return;
+  const fmt = activeTab === "json" ? "json" : activeTab === "flat" ? "flat" : "edifact";
+  window.location.href = `/api/jobs/${activeJobId}/export/${fmt}`;
+});
+
+async function init() {
+  await loadConfig();
+  await loadJobs();
+}
+
+async function loadConfig() {
+  try {
+    const config = await requestJson("/api/config");
+    configStatus.textContent = config.vision_configured
+      ? `${config.vision_provider} · ${config.vision_model || "未命名模型"}`
+      : "未配置多模态";
+    configStatus.classList.toggle("ok", Boolean(config.vision_configured));
+  } catch {
+    configStatus.textContent = "配置不可读";
+  }
+}
+
+async function loadJobs(query = "") {
+  const params = query ? `?q=${encodeURIComponent(query)}` : "";
+  const payload = await requestJson(`/api/jobs${params}`);
+  renderJobs(payload.jobs || []);
+}
+
+function renderJobs(jobs) {
+  if (!jobs.length) {
+    jobList.innerHTML = `<div class="empty">暂无记录</div>`;
+    return;
+  }
+  jobList.innerHTML = "";
+  jobs.forEach((job) => {
+    const fields = job.fields || {};
+    const title = fields.bill_of_lading_no || job.source || job.id;
+    const route = [fields.port_of_loading, fields.port_of_discharge].filter(Boolean).join(" → ");
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `job-item ${job.id === activeJobId ? "active" : ""}`;
+    item.innerHTML = `
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(route || fields.vessel || "未识别航线")}</span>
+      <small>${escapeHtml(job.engine)} · ${formatDate(job.updated_at)}</small>
+    `;
+    item.addEventListener("click", () => openJob(job.id));
+    jobList.appendChild(item);
+  });
+}
+
+async function openJob(jobId) {
+  const job = await requestJson(`/api/jobs/${jobId}`);
+  applyResult(job);
+  await loadJobs(jobSearch.value);
+}
+
+function applyResult(result) {
+  lastResult = normalizeResult(result);
+  activeJobId = lastResult.id || lastResult.job?.id || "";
+  renderFields(lastResult.fields);
+  renderQuality(lastResult.quality, lastResult.engine, lastResult.status);
+  renderWarnings(lastResult.warnings);
+  renderOutput();
+  setResultActions(Boolean(lastResult));
+}
+
+function normalizeResult(result) {
+  if (result.job) return { ...result.job, text: result.text, source: result.source, engine: result.engine };
+  return result;
+}
 
 function renderFields(fields) {
   fieldGrid.innerHTML = "";
   Object.entries(labels).forEach(([key, label]) => {
-    const raw = fields[key];
-    const value = formatValue(raw);
-    const card = document.createElement("div");
+    const raw = fields?.[key];
+    const card = document.createElement("label");
     card.className = "field";
-    card.innerHTML = `<strong>${label}</strong><span>${escapeHtml(value || "未识别")}</span>`;
+    if (key === "containers" || key === "marks_and_nos" || key === "goods_description") card.classList.add("wide");
+    card.dataset.field = key;
+    card.innerHTML = `<strong>${label}</strong>${editorFor(key, raw)}`;
     fieldGrid.appendChild(card);
   });
 }
 
-function renderQuality(stats) {
+function editorFor(key, value) {
+  if (partyFields.has(key)) {
+    return `
+      <input data-field="${key}.name" value="${escapeAttribute(value?.name || "")}" placeholder="名称">
+      <textarea data-field="${key}.address" rows="2" placeholder="地址">${escapeHtml(value?.address || "")}</textarea>
+    `;
+  }
+  if (key === "containers") {
+    return `<textarea data-field="${key}" rows="5" placeholder="箱明细 JSON">${escapeHtml(JSON.stringify(value || [], null, 2))}</textarea>`;
+  }
+  if (multiLineFields.has(key)) {
+    return `<textarea data-field="${key}" rows="3">${escapeHtml(value || "")}</textarea>`;
+  }
+  return `<input data-field="${key}" value="${escapeAttribute(value || "")}">`;
+}
+
+function readEditorFields() {
+  const fields = {};
+  Object.keys(labels).forEach((key) => {
+    if (partyFields.has(key)) {
+      fields[key] = {
+        name: readInput(`${key}.name`),
+        address: readInput(`${key}.address`)
+      };
+    } else if (key === "containers") {
+      const raw = readInput(key).trim();
+      try {
+        fields[key] = raw ? JSON.parse(raw) : [];
+      } catch {
+        throw new Error("箱明细必须是有效 JSON。");
+      }
+    } else {
+      fields[key] = readInput(key);
+    }
+  });
+  return fields;
+}
+
+function readInput(name) {
+  return fieldGrid.querySelector(`[data-field="${CSS.escape(name)}"]`)?.value || "";
+}
+
+function renderQuality(stats, engine = "", status = "") {
   const percent = Math.round((stats?.score || 0) * 100);
-  quality.textContent = `${percent}% 完整度`;
+  const engineText = engine?.endsWith("_vision") ? "Mimo 多模态" : "规则";
+  quality.textContent = `${percent}% · ${engineText}${status === "reviewed" ? " · 已校对" : ""}`;
 }
 
 function renderWarnings(items) {
-  if (!items?.length) {
+  const normalized = normalizeWarnings(items);
+  if (!normalized.length) {
     warnings.hidden = true;
     warnings.textContent = "";
     return;
   }
   warnings.hidden = false;
-  warnings.innerHTML = items.map(escapeHtml).join("<br>");
+  warnings.innerHTML = normalized.map(escapeHtml).join("<br>");
+}
+
+function normalizeWarnings(items) {
+  if (typeof items === "string") return items.trim() ? [items.trim()] : [];
+  if (!Array.isArray(items)) return [];
+  if (items.length && items.every((item) => typeof item === "string" && item.length === 1)) {
+    const joined = items.join("").trim();
+    return joined ? [joined] : [];
+  }
+  return items.map((item) => String(item || "").trim()).filter(Boolean);
 }
 
 function renderOutput() {
   if (!lastResult) return;
-  if (activeTab === "json") {
-    ediOutput.textContent = JSON.stringify(lastResult.fields, null, 2);
-  } else if (activeTab === "flat") {
-    ediOutput.textContent = lastResult.edi.flat;
-  } else {
-    ediOutput.textContent = lastResult.edi.edifact_ifcsum;
-  }
+  ediOutput.textContent = currentOutputText();
 }
 
-function formatValue(value) {
-  if (!value) return "";
-  if (typeof value === "object") {
-    return [value.name, value.address].filter(Boolean).join("\n");
+function currentOutputText() {
+  if (!lastResult) return "";
+  if (activeTab === "json") return JSON.stringify(lastResult.fields, null, 2);
+  if (activeTab === "flat") return lastResult.edi?.flat || "";
+  return lastResult.edi?.edifact_ifcsum || "";
+}
+
+function setBusy(isBusy) {
+  form.querySelectorAll("button, input, textarea").forEach((item) => {
+    if (item.id !== "clearBtn") item.disabled = isBusy;
+  });
+}
+
+function setResultActions(enabled) {
+  saveReviewBtn.disabled = !enabled;
+  copyOutputBtn.disabled = !enabled;
+  downloadOutputBtn.disabled = !enabled || !activeJobId;
+}
+
+function syncFileName() {
+  const selected = fileInput.files[0]?.name || "";
+  fileName.textContent = selected || "选择 PDF 或图片";
+  fileName.classList.toggle("empty", !selected);
+}
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+  let payload = {};
+  if (contentType.includes("application/json")) {
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error("服务返回了无效 JSON，请稍后重试。");
+    }
+  } else {
+    const message = htmlToText(text) || `服务返回了 ${response.status} 错误。`;
+    throw new Error(message);
   }
-  return String(value);
+  if (!response.ok) throw new Error(payload.error || "请求失败");
+  return payload;
+}
+
+function htmlToText(value) {
+  return String(value || "")
+    .replace(new RegExp("<style[\\s\\S]*?</style>", "gi"), "")
+    .replace(new RegExp("<script[\\s\\S]*?</script>", "gi"), "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+function debounce(fn, delay) {
+  let timer = 0;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
 }
 
 function escapeHtml(value) {
@@ -159,3 +388,10 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replaceAll("\n", "&#10;");
+}
+
+init();
+syncFileName();

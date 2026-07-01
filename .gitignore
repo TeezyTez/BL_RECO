@@ -1,4 +1,11 @@
 __pycache__/
 .pytest_cache/
+.venv/
+.pip-cache/
+.tools/
+.env
 uploads/
+data/*.sqlite3
+flask.log
+flask.err
 *.pyc

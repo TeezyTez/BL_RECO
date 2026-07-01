@@ -195,8 +195,19 @@ def bill_from_dict(payload: dict[str, Any]) -> BillOfLading:
     data["consignee"] = _party(payload.get("consignee"))
     data["notify_party"] = _party(payload.get("notify_party"))
     data["containers"] = [_container(item) for item in payload.get("containers", []) if isinstance(item, dict)]
-    data["warnings"] = [str(item) for item in payload.get("warnings", []) if str(item).strip()]
+    data["warnings"] = _warnings(payload.get("warnings", []))
     return BillOfLading(**data)
+
+
+def _warnings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if not isinstance(value, list):
+        return []
+    if value and all(isinstance(item, str) and len(item) == 1 for item in value):
+        joined = "".join(value).strip()
+        return [joined] if joined else []
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _party(value: Any) -> Party:

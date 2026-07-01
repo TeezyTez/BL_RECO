@@ -8,6 +8,7 @@
   --accent-dark: #0f5f58;
   --warn: #b65c00;
   --chip: #ecf4f2;
+  --danger: #9c2f2f;
 }
 
 * {
@@ -47,18 +48,37 @@ h2 {
 }
 
 .topbar p,
-.standard {
+.standard,
+.status-pill {
   color: var(--muted);
   font-size: 14px;
 }
 
-.standard {
+.status-strip {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 8px;
   text-align: right;
+}
+
+.status-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #f8fbfb;
+  font-weight: 700;
+}
+
+.status-pill.ok {
+  color: var(--accent-dark);
+  background: var(--chip);
+  border-color: #bdd9d3;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  grid-template-columns: minmax(250px, 0.65fr) minmax(320px, 0.9fr) minmax(420px, 1.25fr);
   gap: 18px;
   padding: 18px;
 }
@@ -70,6 +90,7 @@ h2 {
   min-width: 0;
 }
 
+.history-panel,
 .input-panel,
 .result-panel,
 .edi-panel {
@@ -77,7 +98,7 @@ h2 {
 }
 
 .edi-panel {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
 }
 
 .panel-head {
@@ -97,6 +118,11 @@ button {
   padding: 0 14px;
   cursor: pointer;
   font-weight: 600;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 button:hover {
@@ -138,7 +164,6 @@ button:hover {
 
 textarea {
   width: 100%;
-  min-height: 250px;
   resize: vertical;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -147,8 +172,87 @@ textarea {
   font: 14px/1.55 Consolas, "Microsoft YaHei", monospace;
 }
 
+#text {
+  min-height: 250px;
+}
+
+input[type="text"],
+input[type="search"],
+.field input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--ink);
+  font: 14px/1.4 "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+}
+
+.search-input {
+  margin-bottom: 12px;
+}
+
+.job-list {
+  display: grid;
+  gap: 8px;
+  max-height: 620px;
+  overflow: auto;
+}
+
+.job-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  height: auto;
+  min-height: 76px;
+  padding: 10px;
+  text-align: left;
+  border-radius: 8px;
+  background: #fbfdfd;
+}
+
+.job-item.active {
+  border-color: var(--accent);
+  background: var(--chip);
+}
+
+.job-item strong,
+.job-item span,
+.job-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-item span,
+.job-item small,
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.empty {
+  padding: 18px 8px;
+  text-align: center;
+}
+
+.vision-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.vision-consent input {
+  margin-top: 2px;
+}
+
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
 }
@@ -161,10 +265,16 @@ textarea {
   color: var(--warn);
   background: #fff8ef;
   font-size: 14px;
+  line-height: 1.5;
+  max-height: 150px;
+  overflow: auto;
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
 }
 
 .quality {
-  min-width: 90px;
+  min-width: 120px;
   text-align: center;
   border-radius: 999px;
   padding: 6px 10px;
@@ -172,6 +282,15 @@ textarea {
   background: var(--chip);
   font-size: 13px;
   font-weight: 700;
+}
+
+.result-actions,
+.edi-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .field-grid {
@@ -188,6 +307,10 @@ textarea {
   background: #fcfdfd;
 }
 
+.field.wide {
+  grid-column: 1 / -1;
+}
+
 .field strong {
   display: block;
   color: var(--muted);
@@ -195,12 +318,16 @@ textarea {
   margin-bottom: 5px;
 }
 
-.field span {
-  display: block;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 14px;
-  line-height: 1.45;
+.field input,
+.field textarea {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #fff;
+  font-size: 13px;
+}
+
+.field textarea {
+  min-height: 72px;
 }
 
 .tabbar {
@@ -248,7 +375,17 @@ pre {
     padding: 12px;
   }
 
+  .edi-panel {
+    grid-column: auto;
+  }
+
   .field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .status-strip,
+  .standard {
+    align-items: flex-start;
+    text-align: left;
   }
 }

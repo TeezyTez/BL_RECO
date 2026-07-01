@@ -1,13 +1,18 @@
 # 提单识别 EDI 工作台
 
-本项目是一个面向海运物流提单识别的本地 MVP：上传 PDF 或图片形式的提单，抽取文本，解析关键字段，并生成结构化 JSON 与 EDIFACT IFTMCS 风格 EDI 草稿。
+本项目是一个面向海运物流提单识别的本地工作台：上传 PDF 或图片形式的提单，调用多模态模型或本地规则抽取字段，人工校对后保存记录，并导出结构化 JSON、Flat EDI 与 EDIFACT IFTMCS 风格报文。
 
 ## 功能
 
+- 多模态大模型识别：上传 PDF/图片后可调用 Mimo/OpenAI-compatible 视觉模型抽取结构化 JSON
+- 未配置 API Key 或模型调用失败时，自动回退到本地规则/模板识别
 - 上传文本型 PDF 自动抽取提单文本
 - 粘贴 OCR 文本或人工录入提单内容
 - 识别提单号、订舱号、发货人、收货人、通知方、船名航次、起运港、目的港、箱号、封号、件重尺、运费条款、货描
+- 识别结果自动保存到本地 SQLite，可搜索历史记录
+- 字段可人工校对，保存后自动重新生成 EDI
 - 输出结构化 JSON、Flat EDI、EDIFACT IFTMCS 风格报文
+- 支持下载 JSON、Flat EDI、EDIFACT 文件
 - 识别完整度和缺失字段提示
 - 图片 OCR 为可插拔能力：安装 Tesseract 与 pytesseract 后自动启用
 
@@ -23,6 +28,40 @@ python app.py
 ```text
 http://127.0.0.1:5000
 ```
+
+识别记录保存在：
+
+```text
+data/jobs.sqlite3
+```
+
+## 多模态识别
+
+复制 `.env.example` 为 `.env`，填入 API Key、模型和接口地址：
+
+```powershell
+copy .env.example .env
+```
+
+编辑 `.env`：
+
+```text
+VISION_PROVIDER=mimo
+VISION_API_KEY=sk-your-mimo-key
+VISION_BASE_URL=https://api.xiaomimimo.com/v1
+VISION_MODEL=mimo-v2.5
+VISION_API_STYLE=chat
+```
+
+配置后重启应用。上传 PDF 或图片时，只有勾选页面上的“使用 Mimo 多模态识别上传文件”选项，系统才会把文件页面图像发送到配置的模型服务识别；不勾选时仅使用本地规则/模板识别。
+
+如果未配置 Key、网络失败或模型调用失败，会自动回退到本地规则识别，并在页面警告中说明原因。
+
+当前本地规则仍保留，用于：
+
+- API 不可用时兜底
+- 已知模板快速解析
+- 对模型结果做后续校验和格式化
 
 ## 图片 OCR
 
