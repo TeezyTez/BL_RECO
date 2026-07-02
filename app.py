@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from bl_parser import (
     to_flat_edi,
 )
 from document_text import extract_text_from_file
+from edi_interchange import default_sample, render_json_message, render_json_message_with_llm, simulate_transmit
 from storage import JobStore
 from vision_recognizer import recognize_bill_of_lading_with_vision
 
@@ -45,6 +47,8 @@ _load_env_file()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
+app.json.sort_keys = False
+app.config["JSON_SORT_KEYS"] = False
 UPLOAD_DIR.mkdir(exist_ok=True)
 STORE = JobStore(DATA_DIR / "jobs.sqlite3")
 
@@ -76,6 +80,18 @@ def _save_upload(file_storage) -> Path:
     path = Path(temp_name)
     file_storage.save(path)
     return path
+
+
+def _cleanup_upload(path: Path, warnings: list[str]) -> None:
+    for attempt in range(5):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt == 4:
+                warnings.append(f"临时文件暂时被系统占用，稍后可手动清理：{path.name}")
+                return
+            time.sleep(0.15)
 
 
 @app.get("/")
@@ -198,7 +214,7 @@ def recognize():
             return jsonify({"error": str(exc)}), 400
         finally:
             if "path" in locals() and path.exists():
-                path.unlink(missing_ok=True)
+                _cleanup_upload(path, warnings)
     else:
         text = manual_text
         if use_vision:
@@ -296,6 +312,57 @@ def export_job(job_id: str, fmt: str):
     if fmt == "edifact":
         return _download(job["edi"]["edifact_ifcsum"], f"{safe_stem}.edi")
     return jsonify({"error": "导出格式仅支持 json、flat、edifact。"}), 400
+
+
+@app.get("/api/edi/sample")
+def edi_sample():
+    return jsonify({"sample": default_sample()})
+
+
+@app.post("/api/edi/render")
+def render_edi_message():
+    payload = request.get_json(silent=True) or {}
+    fields = payload.get("fields")
+    if not isinstance(fields, dict):
+        job_id = str(payload.get("job_id", "") or "")
+        job = STORE.get(job_id) if job_id else None
+        fields = job["fields"] if job else None
+    if not isinstance(fields, dict):
+        return jsonify({"error": "请先完成提单识别，或提供 fields 对象。"}), 400
+
+    sample_value = payload.get("sample")
+    sample_text = payload.get("sample_json")
+    if sample_value is None:
+        if not str(sample_text or "").strip():
+            return jsonify({"error": "请输入目标系统的 JSON Sample。"}), 400
+        try:
+            sample_value = json.loads(str(sample_text))
+        except json.JSONDecodeError as exc:
+            return jsonify({"error": f"JSON Sample 格式错误：{exc.msg}"}), 400
+
+    mode = str(payload.get("mode") or "llm").strip().lower()
+    if mode in {"rules", "template"}:
+        result = render_json_message(fields, sample_value)
+    else:
+        try:
+            result = render_json_message_with_llm(fields, sample_value)
+        except Exception as exc:
+            result = render_json_message(fields, sample_value)
+            result["mode"] = "rules_fallback"
+            result["warnings"] = [
+                f"AI 智能填充失败，已使用规则填充兜底：{exc}",
+                *result.get("warnings", []),
+            ]
+    return jsonify(result)
+
+
+@app.post("/api/edi/transmit")
+def transmit_edi_message():
+    payload = request.get_json(silent=True) or {}
+    envelope = payload.get("envelope")
+    if not isinstance(envelope, dict):
+        return jsonify({"error": "缺少可发送的 envelope。"}), 400
+    return jsonify({"ack": simulate_transmit(envelope)})
 
 
 @app.get("/api/schema")

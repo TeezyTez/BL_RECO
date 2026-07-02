@@ -78,6 +78,27 @@
       </div>
       <pre id="ediOutput">上传或粘贴提单内容后生成 EDI。</pre>
     </section>
+
+    <section class="panel interchange-panel">
+      <div class="panel-head">
+        <h2>EDI 交互</h2>
+        <div class="edi-tools">
+          <button id="loadEdiSampleBtn" type="button">载入 JSON 样例</button>
+          <button id="renderEdiMessageBtn" type="button" disabled>AI 生成报文</button>
+          <button id="transmitEdiBtn" type="button" disabled>模拟发送</button>
+        </div>
+      </div>
+      <div class="interchange-grid">
+        <label class="json-sample-box">
+          <strong>目标系统 JSON Sample</strong>
+          <textarea id="ediSampleInput" spellcheck="false" placeholder="粘贴目标系统要求的 JSON 样例。AI 会理解字段名和层级后自动填充；也兼容 &#123;&#123;bill_of_lading_no&#125;&#125; 这类占位符。"></textarea>
+        </label>
+        <div class="json-sample-box">
+          <strong>生成的交互报文 / ACK</strong>
+          <pre id="ediMessageOutput">识别并校对字段后，输入 JSON Sample 生成目标报文。</pre>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script src="/static/app.js"></script>

@@ -16,10 +16,17 @@ const refreshJobsBtn = document.querySelector("#refreshJobsBtn");
 const saveReviewBtn = document.querySelector("#saveReviewBtn");
 const copyOutputBtn = document.querySelector("#copyOutputBtn");
 const downloadOutputBtn = document.querySelector("#downloadOutputBtn");
+const loadEdiSampleBtn = document.querySelector("#loadEdiSampleBtn");
+const renderEdiMessageBtn = document.querySelector("#renderEdiMessageBtn");
+const transmitEdiBtn = document.querySelector("#transmitEdiBtn");
+const ediSampleInput = document.querySelector("#ediSampleInput");
+const ediMessageOutput = document.querySelector("#ediMessageOutput");
 
 let lastResult = null;
 let activeTab = "edifact";
 let activeJobId = "";
+let lastEnvelope = null;
+let lastGeneratedMessage = null;
 
 const labels = {
   bill_of_lading_no: "提单号",
@@ -87,6 +94,9 @@ clearBtn.addEventListener("click", () => {
   fieldGrid.innerHTML = "";
   quality.textContent = "等待识别";
   ediOutput.textContent = "上传或粘贴提单内容后生成 EDI。";
+  ediMessageOutput.textContent = "识别并校对字段后，输入 JSON Sample 生成目标报文。";
+  lastEnvelope = null;
+  lastGeneratedMessage = null;
   lastResult = null;
   activeJobId = "";
   setResultActions(false);
@@ -159,6 +169,66 @@ downloadOutputBtn.addEventListener("click", () => {
   window.location.href = `/api/jobs/${activeJobId}/export/${fmt}`;
 });
 
+loadEdiSampleBtn.addEventListener("click", async () => {
+  try {
+    const payload = await requestJson("/api/edi/sample");
+    ediSampleInput.value = JSON.stringify(payload.sample, null, 2);
+  } catch (error) {
+    ediMessageOutput.textContent = error.message;
+  }
+});
+
+renderEdiMessageBtn.addEventListener("click", async () => {
+  if (!lastResult) return;
+  try {
+    const payload = await requestJson("/api/edi/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_id: activeJobId,
+        fields: readEditorFields(),
+        sample_json: ediSampleInput.value,
+        mode: "llm"
+      })
+    });
+    const message = payload.message ?? payload.envelope?.payload;
+    if (message === undefined) {
+      throw new Error("AI 生成结果缺少目标 JSON 报文。");
+    }
+    lastEnvelope = payload.envelope;
+    lastGeneratedMessage = message;
+    transmitEdiBtn.disabled = false;
+    ediMessageOutput.textContent = JSON.stringify(message, null, 2);
+    renderWarnings(payload.warnings || []);
+  } catch (error) {
+    lastEnvelope = null;
+    lastGeneratedMessage = null;
+    transmitEdiBtn.disabled = true;
+    ediMessageOutput.textContent = error.message;
+  }
+});
+
+transmitEdiBtn.addEventListener("click", async () => {
+  if (!lastEnvelope) return;
+  try {
+    const payload = await requestJson("/api/edi/transmit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ envelope: lastEnvelope })
+    });
+    ediMessageOutput.textContent = JSON.stringify(
+      {
+        ack: payload.ack,
+        sentMessage: lastGeneratedMessage || lastEnvelope.payload
+      },
+      null,
+      2
+    );
+  } catch (error) {
+    ediMessageOutput.textContent = error.message;
+  }
+});
+
 async function init() {
   await loadConfig();
   await loadJobs();
@@ -214,6 +284,9 @@ async function openJob(jobId) {
 function applyResult(result) {
   lastResult = normalizeResult(result);
   activeJobId = lastResult.id || lastResult.job?.id || "";
+  lastEnvelope = null;
+  lastGeneratedMessage = null;
+  ediMessageOutput.textContent = "识别并校对字段后，输入 JSON Sample 生成目标报文。";
   renderFields(lastResult.fields);
   renderQuality(lastResult.quality, lastResult.engine, lastResult.status);
   renderWarnings(lastResult.warnings);
@@ -330,6 +403,8 @@ function setResultActions(enabled) {
   saveReviewBtn.disabled = !enabled;
   copyOutputBtn.disabled = !enabled;
   downloadOutputBtn.disabled = !enabled || !activeJobId;
+  renderEdiMessageBtn.disabled = !enabled;
+  transmitEdiBtn.disabled = true;
 }
 
 function syncFileName() {

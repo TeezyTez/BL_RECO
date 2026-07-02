@@ -267,12 +267,23 @@ def _pdf_to_image_data_urls(path: Path) -> list[str]:
     import pypdfium2 as pdfium
 
     pdf = pdfium.PdfDocument(str(path))
-    urls: list[str] = []
-    for page_index in range(min(len(pdf), MAX_PAGES)):
-        bitmap = pdf[page_index].render(scale=2)
-        image = bitmap.to_pil()
-        urls.append(_pil_to_data_url(image))
-    return urls
+    try:
+        urls: list[str] = []
+        for page_index in range(min(len(pdf), MAX_PAGES)):
+            page = pdf[page_index]
+            try:
+                bitmap = page.render(scale=2)
+                image = bitmap.to_pil()
+                urls.append(_pil_to_data_url(image))
+            finally:
+                close = getattr(page, "close", None)
+                if callable(close):
+                    close()
+        return urls
+    finally:
+        close = getattr(pdf, "close", None)
+        if callable(close):
+            close()
 
 
 def _image_path_to_data_url(path: Path) -> str:

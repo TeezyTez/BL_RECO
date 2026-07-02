@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 
 
@@ -27,7 +28,8 @@ def _extract_pdf_text(path: Path) -> ExtractionResult:
     except ImportError as exc:
         raise ValueError("缺少 pypdf，无法读取 PDF 文本。请先安装 requirements.txt。") from exc
 
-    reader = PdfReader(str(path))
+    pdf_bytes = path.read_bytes()
+    reader = PdfReader(BytesIO(pdf_bytes))
     pages: list[str] = []
     for page in reader.pages:
         pages.append(page.extract_text() or "")
@@ -223,7 +225,8 @@ def _extract_image_text(path: Path) -> ExtractionResult:
     _configure_tesseract(pytesseract)
 
     try:
-        text = pytesseract.image_to_string(Image.open(path), lang="eng+chi_sim")
+        with Image.open(path) as image:
+            text = pytesseract.image_to_string(image, lang="eng+chi_sim")
     except Exception as exc:
         return ExtractionResult(text="", warnings=[f"图片 OCR 未完成：{exc}"])
 

@@ -93,11 +93,13 @@ h2 {
 .history-panel,
 .input-panel,
 .result-panel,
-.edi-panel {
+.edi-panel,
+.interchange-panel {
   padding: 18px;
 }
 
-.edi-panel {
+.edi-panel,
+.interchange-panel {
   grid-column: 2 / -1;
 }
 
@@ -363,6 +365,33 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.interchange-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 14px;
+}
+
+.json-sample-box {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.json-sample-box strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#ediSampleInput {
+  min-height: 320px;
+  font: 13px/1.55 Consolas, monospace;
+}
+
+#ediMessageOutput {
+  min-height: 320px;
+}
+
 @media (max-width: 900px) {
   .topbar {
     align-items: flex-start;
@@ -375,11 +404,13 @@ pre {
     padding: 12px;
   }
 
-  .edi-panel {
+  .edi-panel,
+  .interchange-panel {
     grid-column: auto;
   }
 
-  .field-grid {
+  .field-grid,
+  .interchange-grid {
     grid-template-columns: 1fr;
   }
 
